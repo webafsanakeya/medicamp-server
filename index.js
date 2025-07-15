@@ -5,6 +5,8 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
 
+const stripe = require("stripe")(process.env.STRIPE_SK_KEY);
+
 const port = process.env.PORT || 3000;
 const app = express();
 // middleware
@@ -45,6 +47,9 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 async function run() {
   const db = client.db("campdb");
   const campsCollection = db.collection("camps");
+  const registeredCollection = db.collection("registered");
+  const usersCollection = db.collection("users");
+
   try {
     // Generate jwt token
     app.post("/jwt", async (req, res) => {
@@ -84,19 +89,75 @@ async function run() {
     });
 
     // get all camps data from db
-    app.get('/camps', async(req, res)=>{
-      const result = await campsCollection.find().toArray()
-      res.send(result)
-    })
+    app.get("/camps", async (req, res) => {
+      const result = await campsCollection.find().toArray();
+      res.send(result);
+    });
 
-      // get a single camps data from db
-    app.get('/camp/:id', async(req, res)=>{
-      const id = req.params.id
+    // get a single camps data from db
+    app.get("/camp/:id", async (req, res) => {
+      const id = req.params.id;
       const result = await campsCollection.findOne({
         _id: new ObjectId(id),
-      })
+      });
+      res.send(result);
+    });
+
+    // create payment intent for registration
+    app.post("/create-payment-intent", async (req, res) => {
+      const { campId, participantCount } = req.body;
+      const camp = await campsCollection.findOne({
+        _id: new ObjectId(campId),
+      });
+      if (!camp) return res.status(404).send({ message: "Camp not found" });
+      const totalFees = participantCount * camp?.fees * 100;
+      // stripe...
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: totalFees,
+        currency: "usd",
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      });
+
+      res.send({ clientSecret: client_secret });
+    });
+
+    // save registered data in registered collection in db
+    app.post("/registered", async (req, res) => {
+      const registeredData = req.body;
+      const result = await registeredCollection.insertOne(registeredData);
+      res.send(result);
+    });
+
+     // save or update a user info in db
+     app.post('/user', async(req, res)=>{
+      const userData = req.body
+      userData.role = 'participant'
+      userData.created_at = new Date().toISOString()
+      userData.last_loggedIn = new Date().toISOString()
+      const query = {
+         email: userData?.email,
+
+      }
+
+      const alreadyExists = await  usersCollection.findOne(query)
+        console.log("Users already exists: ", !!alreadyExists);
+
+      if(!!alreadyExists){
+        console.log('Updating user data...');
+        const result = await usersCollection.updateOne(query, {
+          $set: { last_loggedIn: new Date().toISOString() },
+        });
+        return res.send(result)
+      }
+    
+      console.log('Creating user data');
+
+      // return console.log(userData);
+      const result = await usersCollection.insertOne(userData)
       res.send(result)
-    })
+     })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
