@@ -130,34 +130,57 @@ async function run() {
       res.send(result);
     });
 
-     // save or update a user info in db
-     app.post('/user', async(req, res)=>{
-      const userData = req.body
-      userData.role = 'participant'
-      userData.created_at = new Date().toISOString()
-      userData.last_loggedIn = new Date().toISOString()
+    // save or update a user info in db
+    app.post("/user", async (req, res) => {
+      const userData = req.body;
+      userData.role = "participant";
+      userData.created_at = new Date().toISOString();
+      userData.last_loggedIn = new Date().toISOString();
       const query = {
-         email: userData?.email,
+        email: userData?.email,
+      };
 
-      }
+      const alreadyExists = await usersCollection.findOne(query);
+      console.log("Users already exists: ", !!alreadyExists);
 
-      const alreadyExists = await  usersCollection.findOne(query)
-        console.log("Users already exists: ", !!alreadyExists);
-
-      if(!!alreadyExists){
-        console.log('Updating user data...');
+      if (!!alreadyExists) {
+        console.log("Updating user data...");
         const result = await usersCollection.updateOne(query, {
           $set: { last_loggedIn: new Date().toISOString() },
         });
-        return res.send(result)
+        return res.send(result);
       }
-    
-      console.log('Creating user data');
+
+      console.log("Creating user data");
 
       // return console.log(userData);
-      const result = await usersCollection.insertOne(userData)
-      res.send(result)
-     })
+      const result = await usersCollection.insertOne(userData);
+      res.send(result);
+    });
+
+    // get a user's role
+    app.get("/user/role/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await usersCollection.findOne({ email });
+      if (!result) return res.status(404).send({ message: "User not found." });
+      res.send({ role: result?.role });
+    });
+
+    // update camp quantity (increase/decrease)
+    app.patch("/participantCount-update/:id", async (req, res) => {
+      const id = req.params.id;
+      const { participantCountToUpdate, status } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $inc: {
+          participantCount:
+            status === "increase" ? participantCountToUpdate : -participantCountToUpdate,
+        },
+      };
+       const result = await campsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+      
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
