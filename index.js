@@ -174,13 +174,63 @@ async function run() {
       const updateDoc = {
         $inc: {
           participantCount:
-            status === "increase" ? participantCountToUpdate : -participantCountToUpdate,
+            status === "increase"
+              ? participantCountToUpdate
+              : -participantCountToUpdate,
         },
       };
-       const result = await campsCollection.updateOne(filter, updateDoc);
+      const result = await campsCollection.updateOne(filter, updateDoc);
       res.send(result);
-      
     });
+
+    // get all users for admin
+    app.get("/all-users", verifyToken, async (req, res) => {
+      console.log(req.user);
+      const filter = {
+        email: {
+          $ne: req?.user?.email,
+        },
+      };
+      const result = await usersCollection.find(filter).toArray();
+      res.send(result);
+    });
+
+    // updates a user's role
+     app.patch("/user/role/update/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const { role } = req.body;
+      console.log(role);
+      const filter = { email: email };
+      const updateDoc = {
+        $set: {
+          role,
+          status: "verified",
+        },
+      };
+      const result = await usersCollection.updateOne(filter, updateDoc);
+      console.log(result);
+      res.send(result);
+    });
+
+     // become organizer request
+      app.patch(
+      "/become/organizer-request/:email",
+      verifyToken,
+      async (req, res) => {
+        const email = req.params.email;
+
+        const filter = { email: email };
+        const updateDoc = {
+          $set: {
+            status: "requested",
+          },
+        };
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        console.log(result);
+        res.send(result);
+      }
+    );
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
