@@ -51,6 +51,31 @@ async function run() {
   const usersCollection = db.collection("users");
 
   try {
+     // verify admin
+     const verifyAdmin = async(req, res, next) =>{
+      const email = req?.user?.email;
+      const user = await usersCollection.findOne({ email,});
+      console.log(user?.role);
+      if (!user || user?.role !== "admin")
+        return res.status(403).send({ message: "Admin only actions!", role: user?.role });
+
+      next();
+     }
+
+     
+      // verify organizer
+    const verifyOrganizer = async (req, res, next) => {
+      const email = req?.user?.email;
+      const user = await usersCollection.findOne({ email,});
+      console.log(user?.role);
+      if (!user || user?.role !== "organizer")
+        return res.status(403).send({ message: "Admin only actions!", role: user?.role });
+
+      next();
+    };
+
+
+
     // Generate jwt token
     app.post("/jwt", async (req, res) => {
       const email = req.body;
@@ -81,7 +106,7 @@ async function run() {
     });
 
     // add a camp in db
-    app.post("/add-camp", async (req, res) => {
+    app.post("/add-camp",verifyToken, verifyOrganizer, async (req, res) => {
       const camp = req.body;
       const result = await campsCollection.insertOne(camp);
 
@@ -129,6 +154,26 @@ async function run() {
       const result = await registeredCollection.insertOne(registeredData);
       res.send(result);
     });
+
+        // get all registered info for participant
+    app.get('/registers/participant/:email',verifyToken, async(req, res) =>{
+      const email =  req.params.email
+      const filter = {'participant.email': email}
+      const result = await registeredCollection.find(filter).toArray()
+      res.send(result)
+    })
+
+    // update registered info for participant
+    
+
+         // get all order info for organizer
+    app.get('/registers/organizer/:email',verifyToken,verifyOrganizer, async(req, res) =>{
+      const email =  req.params.email
+      const filter = {'organizer.email': email}
+      const result = await registeredCollection.find(filter).toArray()
+      res.send(result)
+    })
+
 
     // save or update a user info in db
     app.post("/user", async (req, res) => {
@@ -184,7 +229,7 @@ async function run() {
     });
 
     // get all users for admin
-    app.get("/all-users", verifyToken, async (req, res) => {
+    app.get("/all-users", verifyToken,verifyAdmin, async (req, res) => {
       console.log(req.user);
       const filter = {
         email: {
@@ -196,7 +241,7 @@ async function run() {
     });
 
     // updates a user's role
-     app.patch("/user/role/update/:email", verifyToken, async (req, res) => {
+    app.patch("/user/role/update/:email", verifyToken,verifyAdmin, async (req, res) => {
       const email = req.params.email;
       const { role } = req.body;
       console.log(role);
@@ -212,8 +257,8 @@ async function run() {
       res.send(result);
     });
 
-     // become organizer request
-      app.patch(
+    // become organizer request
+    app.patch(
       "/become/organizer-request/:email",
       verifyToken,
       async (req, res) => {
@@ -231,6 +276,53 @@ async function run() {
       }
     );
 
+    // // admin stats
+    app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
+      const totalUser = await usersCollection.estimatedDocumentCount();
+      const totalCamp = await campsCollection.estimatedDocumentCount();
+      const totalRegistered =
+        await registeredCollection.estimatedDocumentCount();
+
+         //  mongodb aggregation
+      const result = await registeredCollection
+        .aggregate([
+          {
+            // convert id into date
+            $addFields: {
+              createdAt: { $toDate: "$_id" },
+            },
+          },
+          {
+            // group data by date
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: "%Y-%m-%d",
+                  date: "$createdAt",
+                },
+              },
+              revenue: { $sum: "$fees" },
+              registered: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray();
+
+          const barChartData = result.map((data) => ({
+        date: data._id,
+        revenue: data.revenue,
+        registered: data.registered,
+      }));
+
+      const totalRevenue = result.reduce((sum, data) => sum + data?.revenue, 0);
+        res.send({
+        totalUser,
+        totalCamp,
+        totalRegistered,
+        barChartData,
+        totalRevenue,
+      });
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
