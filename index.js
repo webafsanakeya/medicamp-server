@@ -136,7 +136,7 @@ app.get(
     if (!email) {
       return res.status(400).send({ message: "Email is required" });
     }
-    const filter = { organizerEmail: email };
+    const filter = { 'organizer.email': email };
     const result = await campsCollection.find(filter).toArray();
     res.send(result);
   }
