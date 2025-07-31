@@ -127,28 +127,20 @@ async function run() {
     });
 
     // get all camps by organizer email
-    app.get(
-      "/camps-by-organizer",
-
-      verifyToken,
-      verifyOrganizer,
-      async (req, res) => {
-         console.log("✅ Route hit");
-         
-        const email = req.query.email;
-        if (!email) {
-          return res.status(400).send({ message: "Email is required" });
-        }
-        try {
-          const filter = { organizerEmail: email };
-          const result = await campsCollection.find(filter).toArray();
-          res.send(result);
-        } catch (error) {
-          console.error("Error fetching Organizer's camps:", error);
-          res.status(500).send({ message: "Failed to fetch organizer's camp" });
-        }
-      }
-    );
+app.get(
+  "/camps-by-organizer",
+  verifyToken,
+  verifyOrganizer,
+  async (req, res) => {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).send({ message: "Email is required" });
+    }
+    const filter = { organizerEmail: email };
+    const result = await campsCollection.find(filter).toArray();
+    res.send(result);
+  }
+);
 
     // sorted 6 camps
     app.get("/camps/popular", async (req, res) => {
