@@ -11,10 +11,16 @@ const port = process.env.PORT || 3000;
 const app = express();
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://medicamp-app.web.app", //  Firebase Hosting
+    "https://medicamp-app.firebaseapp.com", //  Firebase Alternative Domain
+  ],
   credentials: true,
-  optionSuccessStatus: 200,
+  optionsSuccessStatus: 200,
 };
+
 app.use(cors(corsOptions));
 
 app.use(express.json());
@@ -51,30 +57,31 @@ async function run() {
   const usersCollection = db.collection("users");
 
   try {
-     // verify admin
-     const verifyAdmin = async(req, res, next) =>{
+    // verify admin
+    const verifyAdmin = async (req, res, next) => {
       const email = req?.user?.email;
-      const user = await usersCollection.findOne({ email,});
+      const user = await usersCollection.findOne({ email });
       console.log(user?.role);
       if (!user || user?.role !== "admin")
-        return res.status(403).send({ message: "Admin only actions!", role: user?.role });
-
-      next();
-     }
-
-     
-      // verify organizer
-    const verifyOrganizer = async (req, res, next) => {
-      const email = req?.user?.email;
-      const user = await usersCollection.findOne({ email,});
-      console.log(user?.role);
-      if (!user || user?.role !== "organizer")
-        return res.status(403).send({ message: "Admin only actions!", role: user?.role });
+        return res
+          .status(403)
+          .send({ message: "Admin only actions!", role: user?.role });
 
       next();
     };
 
+    // verify organizer
+    const verifyOrganizer = async (req, res, next) => {
+      const email = req?.user?.email;
+      const user = await usersCollection.findOne({ email });
+      console.log(user?.role);
+      if (!user || user?.role !== "organizer")
+        return res
+          .status(403)
+          .send({ message: "Admin only actions!", role: user?.role });
 
+      next();
+    };
 
     // Generate jwt token
     app.post("/jwt", async (req, res) => {
@@ -106,7 +113,7 @@ async function run() {
     });
 
     // add a camp in db
-    app.post("/add-camp",verifyToken, verifyOrganizer, async (req, res) => {
+    app.post("/add-camp", verifyToken, verifyOrganizer, async (req, res) => {
       const camp = req.body;
       const result = await campsCollection.insertOne(camp);
 
@@ -117,6 +124,45 @@ async function run() {
     app.get("/camps", async (req, res) => {
       const result = await campsCollection.find().toArray();
       res.send(result);
+    });
+
+    // get all camps by organizer email
+    app.get(
+      "/camps-by-organizer",
+
+      verifyToken,
+      verifyOrganizer,
+      async (req, res) => {
+         console.log("✅ Route hit");
+         
+        const email = req.query.email;
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+        try {
+          const filter = { organizerEmail: email };
+          const result = await campsCollection.find(filter).toArray();
+          res.send(result);
+        } catch (error) {
+          console.error("Error fetching Organizer's camps:", error);
+          res.status(500).send({ message: "Failed to fetch organizer's camp" });
+        }
+      }
+    );
+
+    // sorted 6 camps
+    app.get("/camps/popular", async (req, res) => {
+      try {
+        const popularCamps = await campsCollection
+          .find()
+          .sort({ participantCount: -1 })
+          .limit(6)
+          .toArray();
+
+        res.send(popularCamps);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to fetch popular camps" });
+      }
     });
 
     // get a single camps data from db
@@ -155,25 +201,28 @@ async function run() {
       res.send(result);
     });
 
-        // get all registered info for participant
-    app.get('/registers/participant/:email',verifyToken, async(req, res) =>{
-      const email =  req.params.email
-      const filter = {'participant.email': email}
-      const result = await registeredCollection.find(filter).toArray()
-      res.send(result)
-    })
+    // get all registered info for participant
+    app.get("/registers/participant/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const filter = { "participant.email": email };
+      const result = await registeredCollection.find(filter).toArray();
+      res.send(result);
+    });
 
     // update registered info for participant
-    
 
-         // get all order info for organizer
-    app.get('/registers/organizer/:email',verifyToken,verifyOrganizer, async(req, res) =>{
-      const email =  req.params.email
-      const filter = {'organizer.email': email}
-      const result = await registeredCollection.find(filter).toArray()
-      res.send(result)
-    })
-
+    // get all order info for organizer
+    app.get(
+      "/registers/organizer/:email",
+      verifyToken,
+      verifyOrganizer,
+      async (req, res) => {
+        const email = req.params.email;
+        const filter = { "organizer.email": email };
+        const result = await registeredCollection.find(filter).toArray();
+        res.send(result);
+      }
+    );
 
     // save or update a user info in db
     app.post("/user", async (req, res) => {
@@ -229,7 +278,7 @@ async function run() {
     });
 
     // get all users for admin
-    app.get("/all-users", verifyToken,verifyAdmin, async (req, res) => {
+    app.get("/all-users", verifyToken, verifyAdmin, async (req, res) => {
       console.log(req.user);
       const filter = {
         email: {
@@ -241,21 +290,26 @@ async function run() {
     });
 
     // updates a user's role
-    app.patch("/user/role/update/:email", verifyToken,verifyAdmin, async (req, res) => {
-      const email = req.params.email;
-      const { role } = req.body;
-      console.log(role);
-      const filter = { email: email };
-      const updateDoc = {
-        $set: {
-          role,
-          status: "verified",
-        },
-      };
-      const result = await usersCollection.updateOne(filter, updateDoc);
-      console.log(result);
-      res.send(result);
-    });
+    app.patch(
+      "/user/role/update/:email",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+        const { role } = req.body;
+        console.log(role);
+        const filter = { email: email };
+        const updateDoc = {
+          $set: {
+            role,
+            status: "verified",
+          },
+        };
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        console.log(result);
+        res.send(result);
+      }
+    );
 
     // become organizer request
     app.patch(
@@ -283,7 +337,7 @@ async function run() {
       const totalRegistered =
         await registeredCollection.estimatedDocumentCount();
 
-         //  mongodb aggregation
+      //  mongodb aggregation
       const result = await registeredCollection
         .aggregate([
           {
@@ -308,14 +362,14 @@ async function run() {
         ])
         .toArray();
 
-          const barChartData = result.map((data) => ({
+      const barChartData = result.map((data) => ({
         date: data._id,
         revenue: data.revenue,
         registered: data.registered,
       }));
 
       const totalRevenue = result.reduce((sum, data) => sum + data?.revenue, 0);
-        res.send({
+      res.send({
         totalUser,
         totalCamp,
         totalRegistered,
@@ -325,10 +379,10 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
   }
