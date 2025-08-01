@@ -142,6 +142,28 @@ app.get(
   }
 );
 
+// delete a camp
+app.delete("/camp/:id", verifyToken, verifyOrganizer, async(req, res) =>{
+  const id = req.params.id;
+  const result = await campsCollection.deleteOne({_id: new ObjectId(id)});
+  if(result.deletedCount === 1){
+    res.send({success: true});
+  }else{
+    res.status(404).send({message: "Camp not found"})
+  }
+})
+
+// update a camp
+app.patch("/camp/:id", verifyToken, verifyOrganizer, async(req, res)=>{
+  const id = req.params.id;
+  const updateData = req.body;
+  const result = await campsCollection.updateOne(
+    {_id: new ObjectId(id)},
+    {$set: updateData}
+  );
+  res.send(result)
+});
+
     // sorted 6 camps
     app.get("/camps/popular", async (req, res) => {
       try {
