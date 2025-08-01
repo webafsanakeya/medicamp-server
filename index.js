@@ -261,6 +261,20 @@ async function run() {
       res.send(result);
     });
 
+    // Example patch route to mark payment as paid
+app.patch("/registered/:id/pay", async (req, res) => {
+  const id = req.params.id;
+  const result = await registeredCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { paymentStatus: "paid" } }
+  );
+  if (result.modifiedCount > 0) {
+    res.send({ success: true });
+  } else {
+    res.status(404).send({ message: "Registration not found" });
+  }
+});
+
     // save or update a user info in db
     app.post("/user", async (req, res) => {
       const userData = req.body;
