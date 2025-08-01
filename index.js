@@ -127,42 +127,42 @@ async function run() {
     });
 
     // get all camps by organizer email
-app.get(
-  "/camps-by-organizer",
-  verifyToken,
-  verifyOrganizer,
-  async (req, res) => {
-    const email = req.query.email;
-    if (!email) {
-      return res.status(400).send({ message: "Email is required" });
-    }
-    const filter = { 'organizer.email': email };
-    const result = await campsCollection.find(filter).toArray();
-    res.send(result);
-  }
-);
+    app.get(
+      "/camps-by-organizer",
+      verifyToken,
+      verifyOrganizer,
+      async (req, res) => {
+        const email = req.query.email;
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+        const filter = { "organizer.email": email };
+        const result = await campsCollection.find(filter).toArray();
+        res.send(result);
+      }
+    );
 
-// delete a camp
-app.delete("/camp/:id", verifyToken, verifyOrganizer, async(req, res) =>{
-  const id = req.params.id;
-  const result = await campsCollection.deleteOne({_id: new ObjectId(id)});
-  if(result.deletedCount === 1){
-    res.send({success: true});
-  }else{
-    res.status(404).send({message: "Camp not found"})
-  }
-})
+    // delete a camp
+    app.delete("/camp/:id", verifyToken, verifyOrganizer, async (req, res) => {
+      const id = req.params.id;
+      const result = await campsCollection.deleteOne({ _id: new ObjectId(id) });
+      if (result.deletedCount === 1) {
+        res.send({ success: true });
+      } else {
+        res.status(404).send({ message: "Camp not found" });
+      }
+    });
 
-// update a camp
-app.patch("/camp/:id", verifyToken, verifyOrganizer, async(req, res)=>{
-  const id = req.params.id;
-  const updateData = req.body;
-  const result = await campsCollection.updateOne(
-    {_id: new ObjectId(id)},
-    {$set: updateData}
-  );
-  res.send(result)
-});
+    // update a camp
+    app.patch("/camp/:id", verifyToken, verifyOrganizer, async (req, res) => {
+      const id = req.params.id;
+      const updateData = req.body;
+      const result = await campsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      );
+      res.send(result);
+    });
 
     // sorted 6 camps
     app.get("/camps/popular", async (req, res) => {
@@ -237,6 +237,29 @@ app.patch("/camp/:id", verifyToken, verifyOrganizer, async(req, res)=>{
         res.send(result);
       }
     );
+
+    // confirm registration
+ app.patch("/registered/:id/confirm", async (req, res) => {
+  const id = req.params.id;
+  const result = await registeredCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { confirmationStatus: "confirmed" } }
+  );
+  if (result.modifiedCount > 0) {
+    res.send({ success: true });
+  } else {
+    res.status(404).send({ message: "Registration not found" });
+  }
+});
+
+    // cancel registration
+    app.delete("/registered/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await registeredCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
 
     // save or update a user info in db
     app.post("/user", async (req, res) => {
