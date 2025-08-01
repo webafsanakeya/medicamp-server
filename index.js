@@ -362,6 +362,19 @@ app.patch("/registered/:id/pay", async (req, res) => {
       }
     );
 
+    // PATCH /users/:email
+app.patch("/users/:email", async (req, res) => {
+  const email = req.params.email;
+  const updatedInfo = req.body;
+
+  const result = await usersCollection.updateOne(
+    { email },
+    { $set: updatedInfo }
+  );
+
+  res.send(result);
+});
+
     // become organizer request
     app.patch(
       "/become/organizer-request/:email",
