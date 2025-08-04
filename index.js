@@ -10,13 +10,22 @@ const stripe = require("stripe")(process.env.STRIPE_SK_KEY);
 const port = process.env.PORT || 3000;
 const app = express();
 // middleware
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://medicamp-app.web.app",
+  "https://medicamp-app.firebaseapp.com",
+];
+
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "https://medicamp-app.web.app", //  Firebase Hosting
-    "https://medicamp-app.firebaseapp.com", //  Firebase Alternative Domain
-  ],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log("❌ Blocked by CORS:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200,
 };
