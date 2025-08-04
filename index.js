@@ -14,21 +14,23 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://medicamp-app.web.app",
-  "https://medicamp-app.firebaseapp.com",
+  "https://medicamp-app.firebaseapp.com"
 ];
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      console.log("✅ Allowed Origin:", origin);
-      callback(null, origin); // Echo back the origin
+  origin: function(origin, callback) {
+    // allow requests with no origin (like Postman or curl)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      // origin is allowed
+      callback(null, origin);
     } else {
-      console.log("❌ Blocked by CORS:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200,
+  optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
