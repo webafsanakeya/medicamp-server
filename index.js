@@ -67,6 +67,7 @@ async function run() {
   const campsCollection = db.collection("camps");
   const registeredCollection = db.collection("registered");
   const usersCollection = db.collection("users");
+  const feedbackCollection = db.collection("feedback");
 
   try {
     // verify admin
@@ -234,6 +235,93 @@ async function run() {
       const result = await registeredCollection.find(filter).toArray();
       res.send(result);
     });
+
+    // 1️⃣ Submit feedback (Participant only, after payment)
+    app.post("/feedback", verifyToken, async (req, res) => {
+  try {
+    const { campId, participantEmail, rating, comment } = req.body;
+
+    // Check if participant has paid for this camp
+    const registered = await registeredCollection.findOne({
+      "participant.email": participantEmail,
+      campId: campId,
+      paymentStatus: "paid",
+    });
+
+    if (!registered) {
+      return res.status(403).send({
+        message: "You must be a paid participant to give feedback",
+      });
+    }
+
+    const feedbackData = {
+      campId,
+      participantEmail,
+      rating,
+      comment,
+      createdAt: new Date(),
+    };
+
+    const result = await feedbackCollection.insertOne(feedbackData);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to submit feedback" });
+  }
+});
+// 2️⃣ Get all feedback for a camp (for showing in camp details / frontend)
+app.get("/feedback/camp/:campId", async (req, res) => {
+  try {
+    const campId = req.params.campId;
+    const feedbacks = await feedbackCollection
+      .find({ campId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(feedbacks);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch feedback" });
+  }
+});
+
+// 3️⃣ Get feedback by participant (so they can see/edit their reviews if needed)
+app.get("/feedback/participant/:email", verifyToken, async (req, res) => {
+  try {
+    const email = req.params.email;
+    const feedbacks = await feedbackCollection
+      .find({ participantEmail: email })
+      .toArray();
+    res.send(feedbacks);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch your feedback" });
+  }
+});
+
+// 4️⃣ Update feedback (if participant wants to edit their rating/comment)
+app.patch("/feedback/:id", verifyToken, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { rating, comment } = req.body;
+
+    const result = await feedbackCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { rating, comment, updatedAt: new Date() } }
+    );
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to update feedback" });
+  }
+});
+
+// 5️⃣ Delete feedback (optional)
+app.delete("/feedback/:id", verifyToken, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await feedbackCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to delete feedback" });
+  }
+});
 
     // update registered info for participant
 
