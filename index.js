@@ -296,18 +296,7 @@ async function run() {
       res.send(result);
     });
 
-    // Get all feedbacks (for homepage Testimonials)
-app.get("/feedback/all", async (req, res) => {
-  try {
-    const feedbacks = await feedbackCollection
-      .find()
-      .sort({ createdAt: -1 })
-      .toArray();
-    res.send(feedbacks);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to fetch feedbacks" });
-  }
-});
+    
 
     // ======================= Admin Stats =======================
     app.get("/admin-stats", verifyToken, verifyRole("admin"), async (req, res) => {
