@@ -181,35 +181,32 @@ async function run() {
     });
 
     // ======================= My Bookings =======================
-    app.get("/registers/participant/:email", verifyToken, async (req, res) => {
-  const email = req.params.email;
+    app.get("/my-bookings", verifyToken, async (req, res) => {
+      try {
+        const participantEmail = req.user.email;
 
-  const bookings = await registeredCollection
-    .aggregate([
-      { $match: { "participant.email": email } },
-      {
-        $lookup: {
-          from: "camps",
-          localField: "campId",
-          foreignField: "_id",
-          as: "campDetails",
-        },
-      },
-      { $unwind: "$campDetails" }, // flatten the array
-      {
-        $project: {
-          _id: 1,
-          paymentStatus: 1,
-          date: "$campDetails.date",
-          location: "$campDetails.location",
-          campName: "$campDetails.name",
-        },
-      },
-    ])
-    .toArray();
+        const bookings = await registeredCollection
+          .aggregate([
+            { $match: { "participant.email": participantEmail } },
+            {
+              $lookup: {
+                from: "camps",
+                localField: "campId",
+                foreignField: "_id",
+                as: "campDetails",
+              },
+            },
+            { $unwind: { path: "$campDetails", preserveNullAndEmptyArrays: true } },
+            { $sort: { createdAt: -1 } },
+          ])
+          .toArray();
 
-  res.send(bookings);
-});
+        res.send(bookings);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "Failed to fetch your bookings" });
+      }
+    });
 
     // ======================= Users =======================
     app.post("/user", async (req, res) => {
@@ -295,8 +292,6 @@ async function run() {
       const result = await feedbackCollection.deleteOne({ _id: new ObjectId(req.params.id) });
       res.send(result);
     });
-
-    
 
     // ======================= Admin Stats =======================
     app.get("/admin-stats", verifyToken, verifyRole("admin"), async (req, res) => {
