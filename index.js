@@ -181,32 +181,35 @@ async function run() {
     });
 
     // ======================= My Bookings =======================
-    app.get("/my-bookings", verifyToken, async (req, res) => {
-      try {
-        const participantEmail = req.user.email;
+    app.get("/registers/participant/:email", verifyToken, async (req, res) => {
+  const email = req.params.email;
 
-        const bookings = await registeredCollection
-          .aggregate([
-            { $match: { "participant.email": participantEmail } },
-            {
-              $lookup: {
-                from: "camps",
-                localField: "campId",
-                foreignField: "_id",
-                as: "campDetails",
-              },
-            },
-            { $unwind: { path: "$campDetails", preserveNullAndEmptyArrays: true } },
-            { $sort: { createdAt: -1 } },
-          ])
-          .toArray();
+  const bookings = await registeredCollection
+    .aggregate([
+      { $match: { "participant.email": email } },
+      {
+        $lookup: {
+          from: "camps",
+          localField: "campId",
+          foreignField: "_id",
+          as: "campDetails",
+        },
+      },
+      { $unwind: "$campDetails" }, // flatten the array
+      {
+        $project: {
+          _id: 1,
+          paymentStatus: 1,
+          date: "$campDetails.date",
+          location: "$campDetails.location",
+          campName: "$campDetails.name",
+        },
+      },
+    ])
+    .toArray();
 
-        res.send(bookings);
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ error: "Failed to fetch your bookings" });
-      }
-    });
+  res.send(bookings);
+});
 
     // ======================= Users =======================
     app.post("/user", async (req, res) => {
