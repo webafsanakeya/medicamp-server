@@ -176,7 +176,7 @@ async function run() {
 
       res.send(result);
     });
-    // Camp Registration API
+   
     // Camp Registration API
     app.post("/camps-join", async (req, res) => {
       const data = req.body;
@@ -321,143 +321,199 @@ async function run() {
       res.send(result);
     });
 
+  
+
     
-
-    // create payment intent for registration
-    app.post("/create-payment-intent", async (req, res) => {
-      const { campId, participantCount } = req.body;
-      const camp = await campsCollection.findOne({ _id: new ObjectId(campId) });
-      if (!camp) return res.status(404).send({ message: "Camp not found" });
-      const totalFees = participantCount * camp?.fees * 100;
-      // stripe...
-      const { client_secret } = await stripe.paymentIntents.create({
-        amount: totalFees,
-        currency: "usd",
-        automatic_payment_methods: { enabled: true },
+ //=======================participant==================
+    // Profile API
+    app.get("/participant-profile", async (req, res) => {
+      const user = await usersCollection.findOne({ email: req.query.email });
+      const registration = await campsJoinCollection.findOne({
+        email: req.query.email,
       });
-      res.send({ clientSecret: client_secret });
+      res.send({
+        name: user?.name,
+        photoURL: user?.photoURL,
+        contact: registration?.emergencyContact || "",
+      });
     });
-    // save registered data in registered collection in db
-    app.post("/registered", async (req, res) => {
-      const registeredData = req.body;
-      const result = await registeredCollection.insertOne(registeredData);
-      res.send(result);
-    });
-    // get all registered info for participant
-    app.get("/registers/participant/:email", verifyToken, async (req, res) => {
-      const email = req.params.email;
-      const filter = { "participant.email": email };
-      const result = await registeredCollection.find(filter).toArray();
-      res.send(result);
-    });
-    // 1️⃣ Submit feedback (Participant only, after payment)
-    app.post("/feedback", verifyToken, async (req, res) => {
-      try {
-        const { campId, participantEmail, rating, comment } = req.body;
-        // Check if participant has paid for this camp
-        const registered = await registeredCollection.findOne({
-          "participant.email": participantEmail,
-          campId: campId,
-          paymentStatus: "paid",
-        });
-        if (!registered) {
-          return res.status(403).send({
-            message: "You must be a paid participant to give feedback",
+
+    // Participant Dashboard API
+    app.get("/participant-analytics", async (req, res) => {
+      const userEmail = req.query.email;
+      // 1. Get registrations
+      const registrations = await campsJoinCollection
+        .find({ email: userEmail })
+        .toArray();
+      // 2. Fetch camp details for each registration
+      const enrichedData = await Promise.all(
+        registrations.map(async (reg) => {
+          const camp = await campsCollection.findOne({
+            _id: new ObjectId(reg.campId),
           });
-        }
-        const feedbackData = {
-          campId,
-          participantEmail,
-          rating,
-          comment,
-          createdAt: new Date(),
-        };
-        const result = await feedbackCollection.insertOne(feedbackData);
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to submit feedback" });
-      }
+          return {
+            ...reg,
+            campName: camp?.campName || "N/A",
+            fees: camp?.fees || 0,
+            location: camp?.location || "N/A",
+            doctorName: camp?.doctorName || "N/A",
+          };
+        })
+      );
+      res.send(enrichedData);
+    });
+    app.get("/users/role/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send({ role: user?.role || "user" });
     });
 
-    // 2️⃣ Get all feedback for a camp (for showing in camp details / frontend)
-    app.get("/feedback/camp/:campId", async (req, res) => {
-      try {
-        const campId = req.params.campId;
-        const feedbacks = await feedbackCollection
-          .find({ campId })
-          .sort({ createdAt: -1 })
-          .toArray();
-        res.send(feedbacks);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to fetch feedback" });
-      }
-    });
-
-    // 3️⃣ Get feedback by participant (so they can see/edit their reviews if needed)
-    app.get("/feedback/participant/:email", verifyToken, async (req, res) => {
-      try {
-        const email = req.params.email;
-        const feedbacks = await feedbackCollection
-          .find({ participantEmail: email })
-          .toArray();
-        res.send(feedbacks);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to fetch your feedback" });
-      }
-    });
-
-    // Get all feedbacks for public view
-app.get("/feedback/all", async (req, res) => {
-  try {
-    const feedbacks = await feedbackCollection
-      .find()
-      .sort({ createdAt: -1 })
-      .toArray();
-    res.send(feedbacks);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to fetch feedbacks" });
-  }
-});
-
-    // 4️⃣ Update feedback (if participant wants to edit their rating/comment)
-    app.patch("/feedback/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        const { rating, comment } = req.body;
-        const result = await feedbackCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { rating, comment, updatedAt: new Date() } }
-        );
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to update feedback" });
-      }
-    });
-
-    // 5️⃣ Delete feedback (optional)
-    app.delete("/feedback/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await feedbackCollection.deleteOne({
-          _id: new ObjectId(id),
+    //update profile users
+    app.patch("/update-profile", verifyToken, async (req, res) => {
+      // Security check: Only allow users to update their own profile
+      if (req.decoded.email !== req.body.email) {
+        return res.status(403).send({
+          message: "Forbidden: You can only update your own profile.",
         });
-        res.send(result);
+      }
+
+      const { email, name, photoURL, contact } = req.body;
+
+      // Construct the fields to be updated in the 'users' collection
+      const updateFields = {
+        updatedAt: new Date(), // Always update the timestamp
+      };
+      if (name) updateFields.name = name;
+      if (photoURL) updateFields.photoURL = photoURL;
+      // This will add or update the contact field in the users collection
+      if (contact !== undefined) updateFields.contact = contact;
+
+      try {
+        // --- THE FIX: Use usersCollection instead of participantCollection ---
+        const result = await usersCollection.updateOne(
+          { email: email },
+          { $set: updateFields },
+          { upsert: false } // Do not create a new user if one doesn't exist
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ error: "User not found" });
+        }
+
+        res.send({
+          success: true,
+          message: "Profile updated successfully in the database",
+        });
       } catch (error) {
-        res.status(500).send({ error: "Failed to delete feedback" });
+        console.error("Error updating profile in DB:", error);
+        res.status(500).send({ error: "Failed to update profile in database" });
       }
     });
-    // update registered info for participant // get all order info for organizer
-    app.get(
-      "/registers/organizer/:email",
-      verifyToken,
-      verifyOrganizer,
-      async (req, res) => {
-        const email = req.params.email;
-        const filter = { "organizer.email": email };
-        const result = await registeredCollection.find(filter).toArray();
-        res.send(result);
+    ///payments
+    app.get("/user-registered-camps", async (req, res) => {
+      const userEmail = req.query.email;
+
+      // 1. Get user registrations
+      const registrations = await campsJoinCollection
+        .find({ email: userEmail })
+        .toArray();
+
+      // 2. Fetch camp details for each registration
+      const enrichedData = await Promise.all(
+        registrations.map(async (reg) => {
+          const camp = await campsCollection.findOne({
+            _id: new ObjectId(reg.campId),
+          });
+          return {
+            _id: reg._id,
+            campId: reg.campId,
+            campName: camp?.campName || "Unknown Camp",
+            fees: camp?.fees || 0,
+            location: camp?.location || "Unknown Location",
+            doctorName: camp?.doctorName || "Unknown Doctor",
+            status: reg.status || "unpaid",
+            confirmationStatus: reg.confirmationStatus || "Pending",
+          };
+        })
+      );
+
+      res.send(enrichedData);
+    });
+
+    // Payment API
+    app.post("/create-payment-intent", async (req, res) => {
+      const { amount } = req.body;
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: "usd",
+      });
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+
+    app.patch("/update-payment-status/:id", async (req, res) => {
+      const { status, transactionId } = req.body;
+      const result = await campsJoinCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { status, transactionId } }
+      );
+      res.send(result);
+    });
+
+    // Payment History API
+    app.get("/payment-history", async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res.status(400).send({ error: "Email is required" });
       }
-    );
+
+      try {
+        const paymentHistory = await campsJoinCollection
+          .find({
+            email,
+            status: { $regex: /^paid$/i }, // Case-insensitive match for "paid"
+          })
+          .toArray();
+        if (paymentHistory.length === 0) {
+          return res.status(404).send({ error: "No payment history found" });
+        }
+        res.send(paymentHistory);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to fetch payment history" });
+      }
+    });
+    app.delete("/cancel-registration/:id", async (req, res) => {
+      const registration = await campsJoinCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+      if (!registration) {
+        return res.status(404).send({ message: "Registration not found" });
+      }
+      if (registration.status === "paid") {
+        return res
+          .status(400)
+          .send({ message: "Cannot cancel paid registration" });
+      }
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          // Delete registration
+          await campsJoinCollection.deleteOne(
+            { _id: new ObjectId(req.params.id) },
+            { session }
+          );
+          // Decrement participant count
+          await campsCollection.updateOne(
+            { _id: new ObjectId(registration.campId) },
+            { $inc: { participants: -1 } },
+            { session }
+          );
+        });
+        res.send({ success: true });
+      } finally {
+        await session.endSession();
+      }
+    });
+
     // confirm registration
     app.patch("/registered/:id/confirm", async (req, res) => {
       const id = req.params.id;
