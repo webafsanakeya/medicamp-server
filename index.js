@@ -66,9 +66,11 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 async function run() {
   const db = client.db("campdb");
   const campsCollection = db.collection("camps");
+  const campsJoinCollection = db.collection("campsJoin");
   const registeredCollection = db.collection("registered");
   const usersCollection = db.collection("users");
   const feedbackCollection = db.collection("feedback");
+  const SECRET_KEY = process.env.JWT_SECRET;
 
   try {
     // verify admin
@@ -108,70 +110,214 @@ async function run() {
         .send({ success: true });
     });
 
-    // add a camp in db
-    app.post("/add-camp", verifyToken, verifyOrganizer, async (req, res) => {
-      const camp = req.body;
-      const result = await campsCollection.insertOne(camp);
-      res.send(result);
-    });
-    // get all camps data from db
-    app.get("/camps", async (req, res) => {
-      const result = await campsCollection.find().toArray();
-      res.send(result);
-    });
-
-    // get all camps by organizer email
+//==============CAMPS & DASHBOARD RELATED=================
+    // Organizer Dashboard API
     app.get(
-      "/camps-by-organizer",
+      "/organizer-camps",
       verifyToken,
       verifyOrganizer,
       async (req, res) => {
-        const email = req.query.email;
-        if (!email) {
-          return res.status(400).send({ message: "Email is required" });
-        }
-        const filter = { "organizer.email": email };
-        const result = await campsCollection.find(filter).toArray();
+        const result = await campsCollection
+          .find({ organizerEmail: req.query.email })
+          .toArray();
         res.send(result);
       }
     );
-    // delete a camp
-    app.delete("/camp/:id", verifyToken, verifyOrganizer, async (req, res) => {
-      const id = req.params.id;
-      const result = await campsCollection.deleteOne({ _id: new ObjectId(id) });
-      if (result.deletedCount === 1) {
-        res.send({ success: true });
-      } else {
-        res.status(404).send({ message: "Camp not found" });
-      }
-    });
-    // update a camp
-    app.patch("/camp/:id", verifyToken, verifyOrganizer, async (req, res) => {
-      const id = req.params.id;
-      const updateData = req.body;
-      const result = await campsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updateData }
-      );
+    //add camps to dbms
+    app.post("/camps", verifyToken, verifyOrganizer, async (req, res) => {
+      const campData = { ...req.body, participants: 0 };
+      const result = await campsCollection.insertOne(campData);
       res.send(result);
     });
-    // sorted 6 camps
-    app.get("/camps/popular", async (req, res) => {
+    //get camps
+    app.get("/camps", async (req, res) => {
+      const result = await campsCollection
+        .find()
+        .sort({ participants: -1 })
+        .limit(6)
+        .toArray();
+      res.send(result);
+    });
+    //  check users join status
+    app.get("/check-join-status", async (req, res) => {
+      const { email, campId } = req.query;
       try {
-        const popularCamps = await campsCollection
-          .find()
-          .sort({ participantCount: -1 })
-          .limit(6)
-          .toArray();
-        res.send(popularCamps);
+        const existing = await campsJoinCollection.findOne({ email, campId });
+        res.send({ joined: !!existing });
       } catch (error) {
-        res.status(500).send({ error: "Failed to fetch popular camps" });
+        console.error("Error checking join status:", error);
+        res.status(500).send({ joined: false });
       }
     });
-    // get a single camps data from db
-    app.get("/camp/:id", async (req, res) => {
-      const id = req.params.id;
-      const result = await campsCollection.findOne({ _id: new ObjectId(id) });
+    // available api
+    app.get("/available-camps", async (req, res) => {
+      const { search, sort } = req.query;
+
+      const query = search
+        ? {
+            $or: [
+              { campName: { $regex: search, $options: "i" } },
+              { location: { $regex: search, $options: "i" } },
+              { doctorName: { $regex: search, $options: "i" } },
+            ],
+          }
+        : {};
+
+      const sortMap = {
+        "most-registered": { participants: -1 },
+        "lowest-fee": { fees: 1 },
+        "highest-fee": { fees: -1 },
+      };
+
+      const result = await campsCollection
+        .find(query)
+        .sort(sortMap[sort] || { campName: 1 })
+        .toArray();
+
+      res.send(result);
+    });
+    // Camp Registration API
+    // Camp Registration API
+    app.post("/camps-join", async (req, res) => {
+      const data = req.body;
+      const { email, campId } = data;
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const existing = await campsJoinCollection.findOne(
+            { email, campId },
+            { session }
+          );
+
+          if (existing) {
+            throw new Error("You have already registered for this camp");
+          }
+
+          const registrationData = {
+            ...data,
+            status: "unpaid",
+            confirmationStatus: "Pending",
+            registeredAt: new Date(),
+          };
+
+          const result = await campsJoinCollection.insertOne(registrationData, {
+            session,
+          });
+
+          const updateResult = await campsCollection.updateOne(
+            { _id: new ObjectId(campId) },
+            { $inc: { participants: 1 } },
+            { session }
+          );
+
+          if (updateResult.matchedCount === 0) {
+            throw new Error("Camp not found for participant count update");
+          }
+
+          res.send({
+            success: true,
+            insertedId: result.insertedId,
+            message: "Registration successful",
+          });
+        });
+      } catch (error) {
+        if (
+          error.message.includes("duplicate key") ||
+          error.message.includes("already registered")
+        ) {
+          res.status(400).send({
+            success: false,
+            message: "You have already registered for this camp",
+          });
+        } else {
+          console.error("Registration error:", error);
+          res.status(500).send({
+            success: false,
+            message: error.message || "Registration failed",
+          });
+        }
+      } finally {
+        await session.endSession();
+      }
+    });
+
+    // Registered Camps API
+    app.get("/registered-camps", async (req, res) => {
+      const registered = await campsJoinCollection
+        .find({ organizerEmail: req.query.email })
+        .toArray();
+
+      // Fetch all camp names from camps collection
+      const campIds = registered.map((r) => r.campId);
+      const camps = await campsCollection
+        .find({ _id: { $in: campIds.map((id) => new ObjectId(id)) } })
+        .toArray();
+
+      // Merge campName into registered records
+      const result = registered.map((record) => {
+        const camp = camps.find((c) => c._id.toString() === record.campId);
+        return {
+          ...record,
+          campName: camp?.campName || "Unknown Camp",
+        };
+      });
+
+      res.send(result);
+    });
+
+    //delete the camps
+    app.delete(
+      "/delete-camp/:id",
+      verifyToken,
+      verifyOrganizer,
+      async (req, res) => {
+        const result = await campsCollection.deleteOne({
+          _id: new ObjectId(req.params.id),
+        });
+        res.send(result);
+      }
+    );
+    // Update Camp API
+    app.patch(
+      "/update-camp/:id",
+      verifyToken,
+      verifyOrganizer,
+      async (req, res) => {
+        const { _id, ...updateData } = req.body;
+        const result = await campsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: updateData }
+        );
+        res.send(result);
+      }
+    );
+    // Update Confirmation Status API
+    app.patch("/update-confirmation/:id", async (req, res) => {
+      const { confirmationStatus } = req.body;
+      if (!confirmationStatus) {
+        return res
+          .status(400)
+          .send({ error: "confirmationStatus is required" });
+      }
+
+      try {
+        const result = await campsJoinCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { confirmationStatus: confirmationStatus } }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ error: "Registration not found" });
+        }
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating confirmation status:", error);
+        res.status(500).send({ error: "Failed to update confirmation status" });
+      }
+    });
+    app.get("/available-camps/:id", async (req, res) => {
+      const result = await campsCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
       res.send(result);
     });
 
