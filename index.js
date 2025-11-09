@@ -419,35 +419,42 @@ app.post("/camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
 
     //=======================participant==================
     // Profile API
-    app.get("/participant-profile", verifyJWT, verifyRole("participant"), async (req, res) => {
-  const user = req.user;
-  const registration = await campsJoinCollection.findOne({ email: user.email });
-  res.send({
-    name: user?.name,
-    photoURL: user?.photoURL,
-    contact: registration?.emergencyContact || "",
-  });
-});
+    app.get("/participant-profile", async (req, res) => {
+      const user = await usersCollection.findOne({ email: req.query.email });
+      const registration = await campsJoinCollection.findOne({
+        email: req.query.email,
+      });
+      res.send({
+        name: user?.name,
+        photoURL: user?.photoURL,
+        contact: registration?.emergencyContact || "",
+      });
+    });
 
-app.get("/participant-analytics", verifyJWT, verifyRole("participant"), async (req, res) => {
-  const userEmail = req.user.email;
-  const registrations = await campsJoinCollection.find({ email: userEmail }).toArray();
-
-  const enrichedData = await Promise.all(
-    registrations.map(async (reg) => {
-      const camp = await campsCollection.findOne({ _id: new ObjectId(reg.campId) });
-      return {
-        ...reg,
-        campName: camp?.campName || "N/A",
-        fees: camp?.fees || 0,
-        location: camp?.location || "N/A",
-        doctorName: camp?.doctorName || "N/A",
-      };
-    })
-  );
-
-  res.send(enrichedData);
-});
+    // Participant Dashboard API
+    app.get("/participant-analytics", async (req, res) => {
+      const userEmail = req.query.email;
+      // 1. Get registrations
+      const registrations = await campsJoinCollection
+        .find({ email: userEmail })
+        .toArray();
+      // 2. Fetch camp details for each registration
+      const enrichedData = await Promise.all(
+        registrations.map(async (reg) => {
+          const camp = await campsCollection.findOne({
+            _id: new ObjectId(reg.campId),
+          });
+          return {
+            ...reg,
+            campName: camp?.campName || "N/A",
+            fees: camp?.fees || 0,
+            location: camp?.location || "N/A",
+            doctorName: camp?.doctorName || "N/A",
+          };
+        })
+      );
+      res.send(enrichedData);
+    });
     app.get("/users/role/:email", async (req, res) => {
       const email = req.params.email;
       const user = await usersCollection.findOne({ email });
