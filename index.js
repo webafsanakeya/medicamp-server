@@ -15,7 +15,7 @@ const allowedOrigins = [
   "http://localhost:5174",
   "https://medicamp-app.web.app",
   "https://medicamp-app.firebaseapp.com",
-  "https://medical-camp-37f24.web.app"
+ 
 ];
 
 app.use(cors({
@@ -156,44 +156,44 @@ app.post("/jwt", async (req, res) => {
       }
     });
 // // ======================= Demo Login =======================
-// app.post("/demo-login", async (req, res) => {
-//   const { role } = req.body;
-//   const credentials = {
-//     admin: { email: "demo.admin@medicamp.com", password: "password123" },
-//     user: { email: "demo.user@medicamp.com", password: "password123" }
-//   };
-//   const userCred = role === "admin" ? credentials.admin : credentials.user;
+app.post("/demo-login", async (req, res) => {
+  const { role } = req.body;
+  const credentials = {
+    admin: { email: "demo.admin@medicamp.com", password: "password123" },
+    user: { email: "demo.user@medicamp.com", password: "password123" }
+  };
+  const userCred = role === "admin" ? credentials.admin : credentials.user;
 
-//   try {
-//     const user = await usersCollection.findOne({ email: userCred.email });
-//     if (!user) return res.status(404).send({ message: "Demo user not found" });
+  try {
+    const user = await usersCollection.findOne({ email: userCred.email });
+    if (!user) return res.status(404).send({ message: "Demo user not found" });
 
-//     const token = jwt.sign({ email: user.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1d" });
-//     res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
-//     res.send({ success: true, user });
-//   } catch (err) {
-//     res.status(500).send({ message: err.message });
-//   }
-// });
+    const token = jwt.sign({ email: user.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1d" });
+    res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
+    res.send({ success: true, user });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
 
 // // ======================= Profile =======================
-// app.patch("/update-profile", verifyJWT, async (req, res) => {
-//   const { email, name, photoURL, contact } = req.body;
-//   if (req.user.email !== email) return res.status(403).send({ message: "Forbidden" });
+app.patch("/update-profile", verifyJWT, async (req, res) => {
+  const { email, name, photoURL, contact } = req.body;
+  if (req.user.email !== email) return res.status(403).send({ message: "Forbidden" });
 
-//   const updateFields = { updatedAt: new Date() };
-//   if (name) updateFields.name = name;
-//   if (photoURL) updateFields.photoURL = photoURL;
-//   if (contact !== undefined) updateFields.contact = contact;
+  const updateFields = { updatedAt: new Date() };
+  if (name) updateFields.name = name;
+  if (photoURL) updateFields.photoURL = photoURL;
+  if (contact !== undefined) updateFields.contact = contact;
 
-//   try {
-//     const result = await usersCollection.updateOne({ email }, { $set: updateFields });
-//     if (result.matchedCount === 0) return res.status(404).send({ message: "User not found" });
-//     res.send({ success: true, message: "Profile updated" });
-//   } catch (err) {
-//     res.status(500).send({ message: err.message });
-//   }
-// });
+  try {
+    const result = await usersCollection.updateOne({ email }, { $set: updateFields });
+    if (result.matchedCount === 0) return res.status(404).send({ message: "User not found" });
+    res.send({ success: true, message: "Profile updated" });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
 
  //==============CAMPS & DASHBOARD RELATED=================
     // Organizer Dashboard API
