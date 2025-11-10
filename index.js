@@ -60,22 +60,7 @@ const verifyJWT = (req, res, next) => {
   });
 };
 
-const verifyRole = (role) => async (req, res, next) => {
-  try {
-    const { email } = req.decoded;
-    const user = await usersCollection.findOne({ email });
-    if (!user) return res.status(404).send({ message: "User not found" });
 
-    if (user.role !== role) {
-      return res.status(403).send({ message: `Access restricted to ${role}` });
-    }
-
-    req.user = user; // attach full user info
-    next();
-  } catch (err) {
-    res.status(500).send({ message: "Role verification failed" });
-  }
-};
    // Organizer Verify Middleware
     const verifyOrganizer = async (req, res, next) => {
       try {
@@ -105,7 +90,6 @@ const verifyRole = (role) => async (req, res, next) => {
         res.status(500).send({ message: "Internal server error" });
       }
     };
-
 // JWT Token API
 app.post("/jwt", async (req, res) => {
   const { email } = req.body;
@@ -122,7 +106,7 @@ app.post("/jwt", async (req, res) => {
   res.send({ token, role: user.role });
 });
 
-//==================all USERS API==================
+ //==================all USERS API==================
     // Users info
     app.post("/users", async (req, res) => {
       try {
@@ -162,62 +146,21 @@ app.post("/jwt", async (req, res) => {
         res.status(500).json({ message: error.message });
       }
     });
-// // ======================= Demo Login =======================
-app.post("/demo-login", async (req, res) => {
-  const { role } = req.body;
-  const credentials = {
-    admin: { email: "demo.admin@medicamp.com", password: "password123" },
-    user: { email: "demo.user@medicamp.com", password: "password123" }
-  };
-  const userCred = role === "admin" ? credentials.admin : credentials.user;
 
-  try {
-    const user = await usersCollection.findOne({ email: userCred.email });
-    if (!user) return res.status(404).send({ message: "Demo user not found" });
-
-    const token = jwt.sign({ email: user.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1d" });
-    res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
-    res.send({ success: true, user });
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
-// // ======================= Profile =======================
-app.patch("/update-profile", verifyJWT, async (req, res) => {
-  const { email, name, photoURL, contact } = req.body;
-  if (req.user.email !== email) return res.status(403).send({ message: "Forbidden" });
-
-  const updateFields = { updatedAt: new Date() };
-  if (name) updateFields.name = name;
-  if (photoURL) updateFields.photoURL = photoURL;
-  if (contact !== undefined) updateFields.contact = contact;
-
-  try {
-    const result = await usersCollection.updateOne({ email }, { $set: updateFields });
-    if (result.matchedCount === 0) return res.status(404).send({ message: "User not found" });
-    res.send({ success: true, message: "Profile updated" });
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
- //==============CAMPS & DASHBOARD RELATED=================
+    //==============CAMPS & DASHBOARD RELATED=================
     // Organizer Dashboard API
-app.get("/organizer-camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
-  const result = await campsCollection
-    .find({ organizerEmail: req.user.email })
-    .toArray();
-  res.send(result);
-});
-
-app.post("/camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
-  const campData = { ...req.body, participants: 0, organizerEmail: req.user.email };
-  const result = await campsCollection.insertOne(campData);
-  res.send(result);
-});
-
-//add camps to dbms
+    app.get(
+      "/organizer-camps",
+      verifyJWT,
+      verifyOrganizer,
+      async (req, res) => {
+        const result = await campsCollection
+          .find({ organizerEmail: req.query.email })
+          .toArray();
+        res.send(result);
+      }
+    );
+    //add camps to dbms
     app.post("/camps", verifyJWT, verifyOrganizer, async (req, res) => {
       const campData = { ...req.body, participants: 0 };
       const result = await campsCollection.insertOne(campData);
@@ -270,7 +213,7 @@ app.post("/camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
 
       res.send(result);
     });
-   
+    // Camp Registration API
     // Camp Registration API
     app.post("/camps-join", async (req, res) => {
       const data = req.body;
@@ -414,7 +357,6 @@ app.post("/camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
       });
       res.send(result);
     });
-
 
     //=======================participant==================
     // Profile API
@@ -643,153 +585,160 @@ app.post("/camps", verifyJWT, verifyRole("organizer"), async (req, res) => {
       const result = await feedbacksCollection.find().toArray();
       res.send(result);
     });
-   // ================== ORGANIZER OVERVIEW STATS API ==================
-app.get(
-  "/organizer-stats",
-  verifyJWT,
-  verifyOrganizer,
-  async (req, res) => {
-    try {
-      const campStats = await campsCollection
-        .aggregate([
-          {
-            $group: {
-              _id: null,
-              totalCamps: { $sum: 1 },
-              totalParticipants: { $sum: "$participants" },
-              upcomingCamps: {
-                $sum: {
-                  $cond: [
-                    { $gt: ["$dateTime", new Date().toISOString()] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        ])
-        .toArray();
-
-      const revenueStats = await campsJoinCollection
-        .aggregate([
-          { $match: { status: "paid" } },
-          {
-            $lookup: {
-              from: "camps",
-              let: { camp_id: { $toObjectId: "$campId" } },
-              pipeline: [
-                { $match: { $expr: { $eq: ["$_id", "$$camp_id"] } } },
-              ],
-              as: "campDetails",
-            },
-          },
-          { $unwind: "$campDetails" },
-          {
-            $group: {
-              _id: null,
-              totalRevenue: { $sum: "$campDetails.fees" },
-            },
-          },
-        ])
-        .toArray();
-
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-      const registrationsOverTime = await campsJoinCollection
-        .aggregate([
-          { $match: { registeredAt: { $gte: sixMonthsAgo } } },
-          {
-            $group: {
-              _id: {
-                year: { $year: "$registeredAt" },
-                month: { $month: "$registeredAt" },
-              },
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { "_id.year": 1, "_id.month": 1 } },
-          {
-            $project: {
-              _id: 0,
-              month: {
-                $let: {
-                  vars: {
-                    monthsInYear: [
-                      "",
-                      "Jan",
-                      "Feb",
-                      "Mar",
-                      "Apr",
-                      "May",
-                      "Jun",
-                      "Jul",
-                      "Aug",
-                      "Sep",
-                      "Oct",
-                      "Nov",
-                      "Dec",
-                    ],
+    // ================== ORGANIZER OVERVIEW STATS API ==================
+    app.get(
+      "/organizer-stats",
+      verifyJWT,
+      verifyOrganizer,
+      async (req, res) => {
+        try {
+          // 1. Total Camps, Participants, and Upcoming Camps
+          const campStats = await campsCollection
+            .aggregate([
+              {
+                $group: {
+                  _id: null,
+                  totalCamps: { $sum: 1 },
+                  totalParticipants: { $sum: "$participants" },
+                  upcomingCamps: {
+                    $sum: {
+                      $cond: [
+                        { $gt: ["$dateTime", new Date().toISOString()] },
+                        1,
+                        0,
+                      ],
+                    },
                   },
-                  in: { $arrayElemAt: ["$$monthsInYear", "$_id.month"] },
                 },
               },
-              count: 1,
-            },
-          },
-        ])
-        .toArray();
+            ])
+            .toArray();
 
-      const campsByLocation = await campsCollection
-        .aggregate([
-          {
-            $group: {
-              _id: "$location",
-              count: { $sum: 1 },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              location: "$_id",
-              count: 1,
-            },
-          },
-        ])
-        .toArray();
+          // 2. Total Revenue (from paid registrations)
+          const revenueStats = await campsJoinCollection
+            .aggregate([
+              { $match: { status: "paid" } },
+              // We need to look up the fee from the camps collection
+              {
+                $lookup: {
+                  from: "camps",
+                  // Important: Convert string campId to ObjectId for matching
+                  let: { camp_id: { $toObjectId: "$campId" } },
+                  pipeline: [
+                    { $match: { $expr: { $eq: ["$_id", "$$camp_id"] } } },
+                  ],
+                  as: "campDetails",
+                },
+              },
+              { $unwind: "$campDetails" },
+              {
+                $group: {
+                  _id: null,
+                  totalRevenue: { $sum: "$campDetails.fees" },
+                },
+              },
+            ])
+            .toArray();
 
-      const recentRegistrations = await campsJoinCollection
-        .find()
-        .sort({ registeredAt: -1 })
-        .limit(5)
-        .toArray();
+          // 3. Registrations over the last 6 months
+          const sixMonthsAgo = new Date();
+          sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-      const stats = {
-        totalCamps: campStats[0]?.totalCamps || 0,
-        totalParticipants: campStats[0]?.totalParticipants || 0,
-        upcomingCampsCount: campStats[0]?.upcomingCamps || 0,
-        totalRevenue: revenueStats[0]?.totalRevenue || 0,
-        registrationsOverTime,
-        campsByLocation,
-        recentRegistrations,
-      };
+          const registrationsOverTime = await campsJoinCollection
+            .aggregate([
+              { $match: { registeredAt: { $gte: sixMonthsAgo } } },
+              {
+                $group: {
+                  _id: {
+                    year: { $year: "$registeredAt" },
+                    month: { $month: "$registeredAt" },
+                  },
+                  count: { $sum: 1 },
+                },
+              },
+              { $sort: { "_id.year": 1, "_id.month": 1 } },
+              {
+                $project: {
+                  _id: 0,
+                  month: {
+                    // Convert month number to name (e.g., 1 -> "Jan")
+                    $let: {
+                      vars: {
+                        monthsInYear: [
+                          "",
+                          "Jan",
+                          "Feb",
+                          "Mar",
+                          "Apr",
+                          "May",
+                          "Jun",
+                          "Jul",
+                          "Aug",
+                          "Sep",
+                          "Oct",
+                          "Nov",
+                          "Dec",
+                        ],
+                      },
+                      in: { $arrayElemAt: ["$$monthsInYear", "$_id.month"] },
+                    },
+                  },
+                  count: 1,
+                },
+              },
+            ])
+            .toArray();
 
-      res.send(stats);
-    } catch (error) {
-      console.error("Error fetching organizer stats:", error);
-      res.status(500).send({ message: "Failed to fetch stats" });
-    }
-  }
-);
+          // 4. Camps by Location
+          const campsByLocation = await campsCollection
+            .aggregate([
+              {
+                $group: {
+                  _id: "$location",
+                  count: { $sum: 1 },
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  location: "$_id",
+                  count: 1,
+                },
+              },
+            ])
+            .toArray();
+
+          // 5. Recent Registrations
+          const recentRegistrations = await campsJoinCollection
+            .find()
+            .sort({ registeredAt: -1 })
+            .limit(5)
+            .toArray();
+
+          // Consolidate all stats into one response object
+          const stats = {
+            totalCamps: campStats[0]?.totalCamps || 0,
+            totalParticipants: campStats[0]?.totalParticipants || 0,
+            upcomingCampsCount: campStats[0]?.upcomingCamps || 0,
+            totalRevenue: revenueStats[0]?.totalRevenue || 0,
+            registrationsOverTime,
+            campsByLocation,
+            recentRegistrations,
+          };
+
+          res.send(stats);
+        } catch (error) {
+          console.error("Error fetching organizer stats:", error);
+          res.status(500).send({ message: "Failed to fetch stats" });
+        }
+      }
+    );
 
 // ✅ Root route for health check
 app.get("/", (req, res) => {
   res.send("🚑 Medical Camp API is running!");
 });
 
-if (require.main === module) {
-  app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
-}
+
 
 module.exports = app;
