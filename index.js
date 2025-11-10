@@ -114,12 +114,11 @@ app.post("/jwt", async (req, res) => {
   const user = await usersCollection.findOne({ email });
   if (!user) return res.status(404).send({ message: "User not found" });
 
-  const token = jwt.sign(
-    { email: user.email, role: user.role }, // include role
-    SECRET_KEY,
-    { expiresIn: "7d" }
-  );
-
+ const token = jwt.sign(
+  { email: user.email, role: user.role },
+  process.env.ACCESS_TOKEN_SECRET,
+  { expiresIn: "7d" }
+);
   res.send({ token, role: user.role });
 });
 
@@ -789,5 +788,8 @@ app.get("/", (req, res) => {
   res.send("🚑 Medical Camp API is running!");
 });
 
-// ✅ Export Express app for Vercel (no app.listen)
+if (require.main === module) {
+  app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
+}
+
 module.exports = app;
