@@ -64,7 +64,7 @@ const verifyJWT = (req, res, next) => {
    // Organizer Verify Middleware
     const verifyOrganizer = async (req, res, next) => {
       try {
-        const email = req.decoded.email;
+        const email = req.user.email;
         if (!email) {
           return res
             .status(401)
@@ -114,7 +114,7 @@ app.post("/jwt", async (req, res) => {
         if (!user?.email) {
           return res.status(400).json({ message: "Email is required" });
         }
-        const usersCollection = db.collection("users");
+        
         // Check if user already exists
         const existingUser = await usersCollection.findOne({
           email: user.email,
@@ -396,11 +396,7 @@ app.post("/jwt", async (req, res) => {
       );
       res.send(enrichedData);
     });
-    app.get("/users/role/:email", async (req, res) => {
-      const email = req.params.email;
-      const user = await usersCollection.findOne({ email });
-      res.send({ role: user?.role || "user" });
-    });
+ 
 
     //update profile users
     app.patch("/update-profile", verifyJWT, async (req, res) => {
@@ -739,6 +735,9 @@ app.get("/", (req, res) => {
   res.send("🚑 Medical Camp API is running!");
 });
 
+// if (require.main === module) {
+//   app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
+// }
 
 
 module.exports = app;
