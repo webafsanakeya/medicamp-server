@@ -217,7 +217,7 @@ async function run() {
 
 run();
 
-// ======================= Start Server =======================
-app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
+// // ======================= Start Server =======================
+// app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
 module.exports = app;
