@@ -149,14 +149,16 @@ app.post("/users", async (req, res) => {
 
 // Return full user (you can change to return only role if you want)
 app.get("/users/role/:email", async (req, res) => {
+  const email = req.params.email;
   try {
-    const { email } = req.params;
     const user = await usersCollection.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
-    res.json(user);
-  } catch (err) {
-    console.error("GET /users/role/:email error:", err);
-    res.status(500).json({ message: err.message });
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+    res.send({ role: user.role });
+  } catch (error) {
+    console.error("Error fetching user role:", error);
+    res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
@@ -414,17 +416,7 @@ app.get("/participant-analytics", async (req, res) => {
   }
 });
 
-// ======================= USERS ROLE (minimal) =======================
-app.get("/users/role/:email", async (req, res) => {
-  try {
-    const email = req.params.email;
-    const user = await usersCollection.findOne({ email });
-    res.send({ role: user?.role || "user" });
-  } catch (err) {
-    console.error("GET /users/role/:email (minimal) error:", err);
-    res.status(500).send({ message: "Failed to fetch role" });
-  }
-});
+
 
 // Update profile (authenticated)
 app.patch("/update-profile", verifyJWT, async (req, res) => {
